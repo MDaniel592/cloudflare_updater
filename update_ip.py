@@ -8,12 +8,19 @@ import os
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Cloudflare API credentials
-CF_API_EMAIL = os.environ.get('CF_API_EMAIL')
-CF_API_KEY   = os.environ.get('CF_API_KEY')
-CF_ZONE_ID   = os.environ.get('CF_ZONE_ID')
-ROUTER_IP    = os.environ.get('ROUTER_IP')
-DNS_RECORD_NAME = os.environ.get('DNS_RECORD_NAME')
+CF_API_EMAIL    = None
+CF_API_KEY      = None
+CF_ZONE_ID      = None
+ROUTER_IP       = None
+DNS_RECORD_NAME = None
+
+def read_env(env_name):
+    env_value = os.environ.get(env_name)
+    if not env_value:
+        logger.error(f'{env_name} undefined: {env_value}')
+        return None
+    else:
+        return str(env_value)
 
 def get_current_ip():
     try:
@@ -56,29 +63,17 @@ def update_cloudflare_dns(current_ip):
 def main():
     logger.info(f'The pogram has started')
 
-    if not CF_API_EMAIL:
-        logger.error(f'CF_API_EMAIL undefined: {CF_API_EMAIL}')
-        return
-    if not CF_API_KEY:
-        logger.error(f'CF_API_KEY undefined: {CF_API_KEY}')
-        return
-    if not CF_ZONE_ID:
-        logger.error(f'CF_ZONE_ID undefined: {CF_ZONE_ID}')
-        return
-    if not ROUTER_IP:
-        logger.error(f'ROUTER_IP undefined: {ROUTER_IP}')
-        return
-    if not DNS_RECORD_NAME:
-        logger.error(f'DNS_RECORD_NAME undefined: {DNS_RECORD_NAME}')
-        return
-
-    CF_API_EMAIL    = str(CF_API_EMAIL)
-    CF_API_KEY      = str(CF_API_KEY)
-    CF_ZONE_ID      = str(CF_ZONE_ID)
-    ROUTER_IP       = str(ROUTER_IP)
-    DNS_RECORD_NAME = str(DNS_RECORD_NAME)
+    CF_API_EMAIL    = read_env('CF_API_EMAIL')
+    CF_API_KEY      = read_env('CF_API_KEY')
+    CF_ZONE_ID      = read_env('CF_ZONE_ID')
+    ROUTER_IP       = read_env('ROUTER_IP')
+    DNS_RECORD_NAME = read_env('DNS_RECORD_NAME')
 
     logger.info(f"CF_API_EMAIL: {CF_API_EMAIL} - CF_API_KEY: {CF_API_KEY} - CF_ZONE_ID: {CF_ZONE_ID} - ROUTER_IP: {ROUTER_IP} - DNS_RECORD_NAME: {DNS_RECORD_NAME}")
+    if not CF_API_EMAIL or not CF_API_KEY or not CF_ZONE_ID or not ROUTER_IP or not DNS_RECORD_NAME: 
+        time.sleep(120)
+        return
+
     while True:
         result = ping3.ping(ROUTER_IP, timeout=1, unit='ms')  
         if not result:
