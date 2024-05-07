@@ -37,6 +37,7 @@ def update_cloudflare_dns(current_ip):
         if not dns_record:
             logger.warning('DNS records not found')            
 
+        logger.info(f'dns_record: {dns_record}')
         for single_record in dns_record:
             if single_record['zone_name'] == DNS_RECORD_NAME and single_record['content'] != current_ip:
                 dns_record_id = single_record
@@ -54,6 +55,30 @@ def update_cloudflare_dns(current_ip):
 
 def main():
     logger.info(f'The pogram has started')
+
+    if not CF_API_EMAIL:
+        logger.error(f'CF_API_EMAIL undefined: {CF_API_EMAIL}')
+        return
+    if not CF_API_KEY:
+        logger.error(f'CF_API_KEY undefined: {CF_API_KEY}')
+        return
+    if not CF_ZONE_ID:
+        logger.error(f'CF_ZONE_ID undefined: {CF_ZONE_ID}')
+        return
+    if not ROUTER_IP:
+        logger.error(f'ROUTER_IP undefined: {ROUTER_IP}')
+        return
+    if not DNS_RECORD_NAME:
+        logger.error(f'DNS_RECORD_NAME undefined: {DNS_RECORD_NAME}')
+        return
+
+    CF_API_EMAIL    = str(CF_API_EMAIL)
+    CF_API_KEY      = str(CF_API_KEY)
+    CF_ZONE_ID      = str(CF_ZONE_ID)
+    ROUTER_IP       = str(ROUTER_IP)
+    DNS_RECORD_NAME = str(DNS_RECORD_NAME)
+
+    logger.info(f"CF_API_EMAIL: {CF_API_EMAIL} - CF_API_KEY: {CF_API_KEY} - CF_ZONE_ID: {CF_ZONE_ID} - ROUTER_IP: {ROUTER_IP} - DNS_RECORD_NAME: {DNS_RECORD_NAME}")
     while True:
         result = ping3.ping(ROUTER_IP, timeout=1, unit='ms')  
         if not result:
