@@ -78,11 +78,17 @@ def main():
         "zone_id": read_env_or_fail("CF_ZONE_ID"),
     }
 
-    record_names = [
-        read_env_or_fail("DOMAIN_NAME"),
-        f"www.{read_env_or_fail('DOMAIN_NAME')}",
-        f"images.{read_env_or_fail('DOMAIN_NAME')}",
-    ]
+    cf_records_env = os.environ.get("CF_RECORDS")
+    if cf_records_env:
+        record_names = [r.strip() for r in cf_records_env.split(",") if r.strip()]
+    else:
+        domain_name = read_env_or_fail("DOMAIN_NAME")
+        record_names = [
+            domain_name,
+            f"www.{domain_name}",
+            f"images.{domain_name}",
+        ]
+
 
     last_ip = None
 

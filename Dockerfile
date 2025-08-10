@@ -5,6 +5,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY update_ip.py .
+COPY cf_ddns_multi.py .
 
-CMD ["python", "update_ip.py"]
+CMD ["python", "cf_ddns_multi.py"]
