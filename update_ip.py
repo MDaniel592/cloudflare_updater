@@ -4,76 +4,108 @@ import time
 import logging
 import ping3
 import os
+from CloudFlare.exceptions import CloudFlareAPIError
+from requests.exceptions import RequestException
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-def read_env(env_name):
-    env_value = os.environ.get(env_name)
-    if not env_value:
-        logger.error(f'{env_name} undefined: {env_value}')
-        return None
-    else:
-        return str(env_value)
+CHECK_INTERVAL = 60  # seconds
 
-def get_current_ip():
+
+def read_env_or_fail(env_name: str) -> str:
+    value = os.environ.get(env_name)
+    if not value:
+        logger.critical(f"Environment variable {env_name} is not set")
+        raise SystemExit(1)
+    return value
+
+
+def get_current_ip() -> str | None:
     try:
-        response = requests.get("https://ifconfig.me/ip")
-        current_ip = response.text
-        logger.info(f'The current IP is: {current_ip}')
-        return current_ip
-    except:
-        logger.error(f'Error reaching ifconfig. Is internet connection down?')
+        response = requests.get("https://ifconfig.me/ip", timeout=5)
+        response.raise_for_status()
+        return response.text.strip()
+    except RequestException as e:
+        logger.error(f"Error fetching current IP: {e}")
         return None
 
-def update_cloudflare_dns(current_ip, cf_data):
-    cf = CloudFlare.CloudFlare(email=cf_data["email"], key=cf_data["api_key"])
 
+def update_cloudflare_records(current_ip: str, cf_data: dict, record_names: list[str]):
     if not current_ip:
-        logger.error(f'Current IP is missing {current_ip}')   
         return
 
     try:
-        dns_records = cf.zones.dns_records.get(cf_data["zone_id"])
-        if not dns_records:
-            logger.warning('DNS records not found')            
+        cf = CloudFlare.CloudFlare(email=cf_data["email"], key=cf_data["api_key"])
 
-        for domain_name in dns_records:
-            if domain_name['zone_name'] == cf_data["dns_record_name"] and domain_name['content'] != current_ip:
-                dns_record_id = domain_name
-                dns_record_id['content'] = current_ip
-                cf.zones.dns_records.put(cf_data["zone_id"], dns_record_id['id'], data=dns_record_id)
-                logger.info(f'DNS record: {dns_record_id["id"]} updated to: {current_ip}')
+        for name in record_names:
+            records = cf.zones.dns_records.get(cf_data["zone_id"], params={"name": name, "type": "A"})
+            if not records:
+                logger.warning(f"No DNS record found for {name}")
+                continue
 
-            elif domain_name['zone_name'] != cf_data["dns_record_name"]:
-                logger.warning('DNS_RECORD_NAME does not match')
+            record = records[0]
+            if record["content"] != current_ip:
+                logger.info(f"Updating {name} from {record['content']} to {current_ip}")
+                cf.zones.dns_records.put(
+                    cf_data["zone_id"],
+                    record["id"],
+                    data={
+                        "type": record["type"],
+                        "name": record["name"],
+                        "content": current_ip,
+                        "ttl": record["ttl"],
+                        "proxied": record.get("proxied", False),
+                    }
+                )
+                logger.info(f"Updated {name} successfully")
             else:
-                logger.info('The IP address is already updated')
-    except:
-        logger.error(f'Error updating DNS record. Is internet connection down?')
+                logger.info(f"{name} already up-to-date")
+
+    except CloudFlareAPIError as e:
+        logger.error(f"CloudFlare API error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
 
 
 def main():
-    logger.info(f'The pogram has started')
+    logger.info("Starting Cloudflare Dynamic DNS Updater")
 
-    router_ip = read_env('ROUTER_IP')
+    router_ip = read_env_or_fail("ROUTER_IP")
     cf_data = {
-        'email' : read_env('CF_API_EMAIL'),
-        'api_key' : read_env('CF_API_KEY'),
-        'zone_id' : read_env('CF_ZONE_ID'),
-        'dns_record_name' : read_env('DNS_RECORD_NAME'),
+        "email": read_env_or_fail("CF_API_EMAIL"),
+        "api_key": read_env_or_fail("CF_API_KEY"),
+        "zone_id": read_env_or_fail("CF_ZONE_ID"),
     }
-    logger.info(f"cf_data: {cf_data}")
 
-    while True:
-        result = ping3.ping(router_ip, timeout=1, unit='ms')  
-        if not result:
-            logger.error(f'{router_ip} is down')
-        else:
-            logger.info(f'{router_ip} is UP - ping result: {round(result, 2)} ms')
-            current_ip = get_current_ip()
-            update_cloudflare_dns(current_ip, cf_data)
-        time.sleep(60)
+    record_names = [
+        read_env_or_fail("DOMAIN_NAME"),
+        f"www.{read_env_or_fail('DOMAIN_NAME')}",
+        f"images.{read_env_or_fail('DOMAIN_NAME')}",
+    ]
+
+    last_ip = None
+
+    try:
+        while True:
+            latency = ping3.ping(router_ip, timeout=1, unit="ms")
+            if latency is None:
+                logger.warning(f"Router {router_ip} is unreachable")
+            else:
+                logger.info(f"Router {router_ip} is UP - {latency:.2f} ms")
+                current_ip = get_current_ip()
+
+                if current_ip and current_ip != last_ip:
+                    update_cloudflare_records(current_ip, cf_data, record_names)
+                    last_ip = current_ip
+                else:
+                    logger.info("Public IP has not changed")
+
+            time.sleep(CHECK_INTERVAL)
+
+    except KeyboardInterrupt:
+        logger.info("Shutting down updater")
 
 
-main()
+if __name__ == "__main__":
+    main()
